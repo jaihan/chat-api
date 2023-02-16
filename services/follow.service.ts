@@ -7,7 +7,7 @@ import DbMixin from "../mixins/db.mixin";
 
 const { MoleculerClientError, ValidationError } = Errors;
 
-export interface ChannelEntity {
+export interface FollowEntity {
 	_id: string;
 	title: string;
 	description: string;
@@ -15,10 +15,10 @@ export interface ChannelEntity {
 }
 
 interface Meta {
-	user?: ChannelEntity | null | undefined;
+	user?: FollowEntity | null | undefined;
 }
 
-export type ActionCreateParams = Partial<ChannelEntity>;
+export type ActionCreateParams = Partial<FollowEntity>;
 
 export interface ActionQuantityParams {
 	id: string;
@@ -35,15 +35,15 @@ export interface ActionQuantityParams {
 	user: string;
 }
 
-interface ChannelSettings extends DbServiceSettings {
+interface FollowSettings extends DbServiceSettings {
 	indexes?: Record<string, number>[];
 }
 
-interface ChannelThis extends Service<ChannelSettings>, MoleculerDbMethods {
+interface FollowThis extends Service<FollowSettings>, MoleculerDbMethods {
 	adapter: DbAdapter | MongoDbAdapter;
 }
 
-const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods } = {
+const FollowService: ServiceSchema<FollowSettings> & { methods: DbServiceMethods } = {
 	name: "follows",
 	// version: 1
 
@@ -110,29 +110,27 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 				channel: { type: "string" },
 				user: { type: "string" },
 			},
-			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
+			handler(this: FollowThis, ctx: Context<ActionQuantityParams, Meta>) {
 				const { channel, user } = ctx.params;
 				return this.findByChannelAndUser(channel, user).then((item: any) => {
 					if (item)
-						return this.Promise.reject(
-							new MoleculerClientError("Articles has already favorited"),
+						return Promise.reject(
+							new MoleculerClientError("Channel has already joined"),
 						);
 
 					return this.adapter
 						.insert({ channel, user, createdAt: new Date() })
-						.then((json: any) =>
-							this.entityChanged("created", json, ctx).then(() => json),
-						);
+						.then((json) => this.entityChanged("created", json, ctx).then(() => json));
 				});
 			},
 		},
 
 		/**
-		 * Delete a favorite record
+		 * Delete a follow record
 		 *
 		 * @actions
 		 *
-		 * @param {String} article - Article ID
+		 * @param {String} article - Channel ID
 		 * @param {String} user - User ID
 		 * @returns {Number} Count of removed records
 		 */
@@ -141,19 +139,17 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 				channel: { type: "string" },
 				user: { type: "string" },
 			},
-			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
+			handler(this: FollowThis, ctx: Context<ActionQuantityParams, Meta>) {
 				const { channel, user } = ctx.params;
 				return this.findByChannelAndUser(channel, user).then((item: any) => {
 					if (!item)
-						return this.Promise.reject(
-							new MoleculerClientError("Articles has not favorited yet"),
+						return Promise.reject(
+							new MoleculerClientError("Channel has not joined yet"),
 						);
 
 					return this.adapter
 						.removeById(item._id)
-						.then((json: any) =>
-							this.entityChanged("removed", json, ctx).then(() => json),
-						);
+						.then((json) => this.entityChanged("removed", json, ctx).then(() => json));
 				});
 			},
 		},
@@ -179,7 +175,7 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 				limit: { type: "number", optional: true, convert: true },
 				offset: { type: "number", optional: true, convert: true },
 			},
-			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
+			handler(this: FollowThis, ctx: Context<ActionQuantityParams, Meta>) {
 				const limit = ctx.params.limit ? Number(ctx.params.limit) : 20;
 				const offset = ctx.params.offset ? Number(ctx.params.offset) : 0;
 
@@ -197,7 +193,7 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 				console.log("***********, ctx.params.creator");
 				console.log(ctx.params.creator);
 				console.log("***********, ctx.entity");
-				return this.Promise.resolve()
+				return Promise.resolve()
 					.then(() => {
 						if (ctx.params.creator) {
 							return ctx
@@ -209,7 +205,7 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 									console.log(channels);
 									console.log("***********, ctx.entity");
 									if (channels.length == 0)
-										return this.Promise.reject(
+										return Promise.reject(
 											new MoleculerClientError("Creator not found"),
 										);
 
@@ -224,7 +220,7 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 						if (countParams && countParams.offset) countParams.offset = null;
 					})
 					.then(() => {
-						return this.Promise.all([
+						return Promise.all([
 							// Get rows
 							this.adapter.find(params),
 
@@ -232,7 +228,7 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 							this.adapter.count(countParams),
 						]);
 					})
-					.then((res: any) => {
+					.then((res) => {
 						console.log("***********");
 						console.log("***********");
 						console.log("***********, channels");
@@ -319,59 +315,6 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 					});
 			},
 		},
-
-		/**
-		 * The "moleculer-db" mixin registers the following actions:
-		 *  - list
-		 *  - find
-		 *  - count
-		 *  - create
-		 *  - insert
-		 *  - update
-		 *  - remove
-		 */
-
-		// --- ADDITIONAL ACTIONS ---
-
-		/**
-		 * Increase the quantity of the product item.
-		 */
-		increaseQuantity: {
-			rest: "PUT /:id/quantity/increase",
-			params: {
-				id: "string",
-				value: "number|integer|positive",
-			},
-			async handler(this: ChannelThis, ctx: Context<ActionQuantityParams>): Promise<object> {
-				const doc = await this.adapter.updateById(ctx.params.id, {
-					$inc: { quantity: ctx.params.value },
-				});
-				const json = await this.transformDocuments(ctx, ctx.params, doc);
-				await this.entityChanged("updated", json, ctx);
-
-				return json;
-			},
-		},
-
-		/**
-		 * Decrease the quantity of the product item.
-		 */
-		decreaseQuantity: {
-			rest: "PUT /:id/quantity/decrease",
-			params: {
-				id: "string",
-				value: "number|integer|positive",
-			},
-			async handler(this: ChannelThis, ctx: Context<ActionQuantityParams>): Promise<object> {
-				const doc = await this.adapter.updateById(ctx.params.id, {
-					$inc: { quantity: -ctx.params.value },
-				});
-				const json = await this.transformDocuments(ctx, ctx.params, doc);
-				await this.entityChanged("updated", json, ctx);
-
-				return json;
-			},
-		},
 	},
 
 	/**
@@ -379,22 +322,9 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 	 */
 	methods: {
 		/**
-		 * Loading sample data to the collection.
-		 * It is called in the DB.mixin after the database
-		 * connection establishing & the collection is empty.
-		 */
-		async seedDB(this: ChannelThis) {
-			await this.adapter.insertMany([
-				{ name: "Samsung Galaxy S10 Plus", quantity: 10, price: 704 },
-				{ name: "iPhone 11 Pro", quantity: 25, price: 999 },
-				{ name: "Huawei P30 Pro", quantity: 15, price: 679 },
-			]);
-		},
-
-		/**
-		 * Find an article by slug
+		 * Find an channel by slug
 		 *
-		 * @param {String} slug - Article slug
+		 * @param {String} slug - Channel slug
 		 *
 		 * @results {Object} Promise<Article
 		 */
@@ -427,17 +357,10 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 		 * @param {Object} entity
 		 * @param {Object} user - Logged in user
 		 */
-		transformEntity(this: any, ctx, entity, user) {
-			if (!entity) return this.Promise.resolve();
-
-			return this.Promise.resolve(entity);
+		transformEntity(ctx, entity, user) {
+			if (!entity) return Promise.resolve();
+			return Promise.resolve(entity);
 		},
-
-		// async myAsyncFunction() {
-		// 	const myArray: any = Promise;
-		// 	const mappedArray = myArray.map((item: any) => item.property);
-		// 	return mappedArray;
-		// },
 
 		/**
 		 * Find the first favorite record by 'article' or 'user'
@@ -449,35 +372,17 @@ const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethod
 		},
 	},
 
-	/**
-	 * Fired after database connection establishing.
-	 */
-	async afterConnected(this: any) {
-		if ("collection" in this.adapter) {
-			if (this.settings.indexes) {
-				await this.Promise.all(
-					this.settings.indexes.map((index: any) =>
-						(<MongoDbAdapter>this.adapter).collection.createIndex(index),
-					),
-				);
-			}
-		}
-	},
-
 	events: {
-		"cache.clean.articles"() {
+		"cache.clean.channels"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
 		"cache.clean.users"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
-		"cache.clean.comments"() {
+		"cache.clean.topics"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
 		"cache.clean.follows"() {
-			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
-		},
-		"cache.clean.favorites"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
 	},

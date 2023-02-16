@@ -8,7 +8,7 @@ import DbMixin from "../mixins/db.mixin";
 
 const { MoleculerClientError, ValidationError } = Errors;
 
-export interface ChannelEntity {
+export interface UserEntity {
 	_id: string;
 	username: string;
 	password: string;
@@ -19,11 +19,11 @@ export interface ChannelEntity {
 }
 
 interface Meta {
-	user?: ChannelEntity | null | undefined;
+	user?: UserEntity | null | undefined;
 	token?: Object | null | undefined;
 }
 
-export type ActionCreateParams = Partial<ChannelEntity>;
+export type ActionCreateParams = Partial<UserEntity>;
 
 export interface ActionQuantityParams {
 	id: string;
@@ -40,7 +40,7 @@ interface ChannelThis extends Service<ChannelSettings>, MoleculerDbMethods {
 	adapter: DbAdapter | MongoDbAdapter;
 }
 
-const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods } = {
+const UserService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods } = {
 	name: "users",
 	// version: 1
 
@@ -90,11 +90,11 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 	 */
 	actions: {
 		/**
-		 * Create a new channel.
+		 * Create a new user.
 		 * Auth is required!
 		 *
 		 * @actions
-		 * @param {Object} channel - Channel entity
+		 * @param {Object} user - User entity
 		 *
 		 * @returns {Object} Created entity
 		 */
@@ -104,14 +104,6 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 			},
 			handler(this: ChannelThis, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
 				let entity = ctx.params.user;
-				console.log("***********");
-				console.log("***********");
-				console.log("***********");
-				console.log(entity);
-
-				console.log("***********");
-				console.log("***********");
-				console.log("***********");
 				return this.validateEntity(entity)
 					.then(() => {
 						if (entity.username)
@@ -148,39 +140,11 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 
 						return this.adapter
 							.insert(entity)
-							.then((doc) => {
-								console.log("***********");
-								console.log("***********");
-								console.log("***********, doc");
-								console.log(doc);
-
-								console.log("***********");
-								console.log("***********");
-								console.log("***********");
-								return this.transformDocuments(ctx, {}, doc);
-							})
-							.then((user) => {
-								console.log("***********");
-								console.log("***********");
-								console.log("***********, user");
-								console.log(user);
-
-								console.log("***********");
-								console.log("***********");
-								console.log("***********");
-								return this.transformEntity(user, true, ctx.meta.token);
-							})
-							.then((json) => {
-								console.log("***********");
-								console.log("***********");
-								console.log("***********, json");
-								console.log(json);
-
-								console.log("***********");
-								console.log("***********");
-								console.log("***********");
-								return this.entityChanged("created", json, ctx).then(() => json);
-							});
+							.then((doc) => this.transformDocuments(ctx, {}, doc))
+							.then((user) => this.transformEntity(user, true, ctx.meta.token))
+							.then((json) =>
+								this.entityChanged("created", json, ctx).then(() => json),
+							);
 					});
 			},
 		},
@@ -217,78 +181,12 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 				});
 			},
 		},
-
-		/**
-		 * The "moleculer-db" mixin registers the following actions:
-		 *  - list
-		 *  - find
-		 *  - count
-		 *  - create
-		 *  - insert
-		 *  - update
-		 *  - remove
-		 */
-
-		// --- ADDITIONAL ACTIONS ---
-
-		/**
-		 * Increase the quantity of the product item.
-		 */
-		increaseQuantity: {
-			rest: "PUT /:id/quantity/increase",
-			params: {
-				id: "string",
-				value: "number|integer|positive",
-			},
-			async handler(this: ChannelThis, ctx: Context<ActionQuantityParams>): Promise<object> {
-				const doc = await this.adapter.updateById(ctx.params.id, {
-					$inc: { quantity: ctx.params.value },
-				});
-				const json = await this.transformDocuments(ctx, ctx.params, doc);
-				await this.entityChanged("updated", json, ctx);
-
-				return json;
-			},
-		},
-
-		/**
-		 * Decrease the quantity of the product item.
-		 */
-		decreaseQuantity: {
-			rest: "PUT /:id/quantity/decrease",
-			params: {
-				id: "string",
-				value: "number|integer|positive",
-			},
-			async handler(this: ChannelThis, ctx: Context<ActionQuantityParams>): Promise<object> {
-				const doc = await this.adapter.updateById(ctx.params.id, {
-					$inc: { quantity: -ctx.params.value },
-				});
-				const json = await this.transformDocuments(ctx, ctx.params, doc);
-				await this.entityChanged("updated", json, ctx);
-
-				return json;
-			},
-		},
 	},
 
 	/**
 	 * Methods
 	 */
 	methods: {
-		/**
-		 * Loading sample data to the collection.
-		 * It is called in the DB.mixin after the database
-		 * connection establishing & the collection is empty.
-		 */
-		async seedDB(this: ChannelThis) {
-			await this.adapter.insertMany([
-				{ name: "Samsung Galaxy S10 Plus", quantity: 10, price: 704 },
-				{ name: "iPhone 11 Pro", quantity: 25, price: 999 },
-				{ name: "Huawei P30 Pro", quantity: 15, price: 679 },
-			]);
-		},
-
 		/**
 		 * Generate a JWT token from user entity
 		 *
@@ -310,7 +208,6 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 		},
 
 		/**
-		 * Transform returned user entity. Generate JWT token if neccessary.
 		 *
 		 * @param {Object} user
 		 * @param {Boolean} withToken
@@ -326,7 +223,6 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 		},
 
 		/**
-		 * Transform returned user entity as profile.
 		 *
 		 * @param {Context} ctx
 		 * @param {Object} user
@@ -354,23 +250,14 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 		},
 	},
 
-	/**
-	 * Fired after database connection establishing.
-	 */
-	async afterConnected(this: ChannelThis) {
-		if ("collection" in this.adapter) {
-			if (this.settings.indexes) {
-				await Promise.all(
-					this.settings.indexes.map((index) =>
-						(<MongoDbAdapter>this.adapter).collection.createIndex(index),
-					),
-				);
-			}
-		}
-	},
-
 	events: {
+		"cache.clean.channels"() {
+			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
+		},
 		"cache.clean.users"() {
+			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
+		},
+		"cache.clean.topics"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
 		"cache.clean.follows"() {
@@ -379,4 +266,4 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 	},
 };
 
-export default ChannelsService;
+export default UserService;

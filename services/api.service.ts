@@ -51,8 +51,9 @@ const ApiService: ServiceSchema<ApiSettingsSchema> = {
 					"REST /users": "users",
 
 					// Channel
+					"GET /channels/:slug/topics": "channels.topics",
 					"REST /channels": "channels",
-					"POST /channels/:slug/topics": "channels.addComment",
+					"POST /channels/:slug/topics": "channels.addTopics",
 
 					// Topic
 					"POST /topics/:slug/messages": "topics.addMessage",

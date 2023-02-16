@@ -6,7 +6,7 @@ import DbMixin from "../mixins/db.mixin";
 
 const { MoleculerClientError, ValidationError } = Errors;
 
-export interface ChannelEntity {
+export interface MessageEntity {
 	_id: string;
 	title: string;
 	description: string;
@@ -14,10 +14,10 @@ export interface ChannelEntity {
 }
 
 interface Meta {
-	user?: ChannelEntity | null | undefined;
+	user?: MessageEntity | null | undefined;
 }
 
-export type ActionCreateParams = Partial<ChannelEntity>;
+export type ActionCreateParams = Partial<MessageEntity>;
 
 export interface ActionQuantityParams {
 	id: string;
@@ -30,15 +30,15 @@ export interface ActionQuantityParams {
 	message: any;
 }
 
-interface ChannelSettings extends DbServiceSettings {
+interface MessageSettings extends DbServiceSettings {
 	indexes?: Record<string, number>[];
 }
 
-interface ChannelThis extends Service<ChannelSettings>, MoleculerDbMethods {
+interface MessageThis extends Service<MessageSettings>, MoleculerDbMethods {
 	adapter: DbAdapter | MongoDbAdapter;
 }
 
-const MessageService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods } = {
+const MessageService: ServiceSchema<MessageSettings> & { methods: DbServiceMethods } = {
 	name: "messages",
 	// version: 1
 
@@ -106,7 +106,7 @@ const MessageService: ServiceSchema<ChannelSettings> & { methods: DbServiceMetho
 				topic: { type: "string" },
 				message: { type: "object" },
 			},
-			handler(this: ChannelThis, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
+			handler(this: MessageThis, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
 				let entity = ctx.params.message;
 				entity.topic = ctx.params.topic;
 				const { user } = ctx.meta;
@@ -276,7 +276,7 @@ const MessageService: ServiceSchema<ChannelSettings> & { methods: DbServiceMetho
 				id: "string",
 				value: "number|integer|positive",
 			},
-			async handler(this: ChannelThis, ctx: Context<ActionQuantityParams>): Promise<object> {
+			async handler(this: MessageThis, ctx: Context<ActionQuantityParams>): Promise<object> {
 				const doc = await this.adapter.updateById(ctx.params.id, {
 					$inc: { quantity: ctx.params.value },
 				});
@@ -296,7 +296,7 @@ const MessageService: ServiceSchema<ChannelSettings> & { methods: DbServiceMetho
 				id: "string",
 				value: "number|integer|positive",
 			},
-			async handler(this: ChannelThis, ctx: Context<ActionQuantityParams>): Promise<object> {
+			async handler(this: MessageThis, ctx: Context<ActionQuantityParams>): Promise<object> {
 				const doc = await this.adapter.updateById(ctx.params.id, {
 					$inc: { quantity: -ctx.params.value },
 				});
@@ -313,22 +313,9 @@ const MessageService: ServiceSchema<ChannelSettings> & { methods: DbServiceMetho
 	 */
 	methods: {
 		/**
-		 * Loading sample data to the collection.
-		 * It is called in the DB.mixin after the database
-		 * connection establishing & the collection is empty.
-		 */
-		async seedDB(this: ChannelThis) {
-			await this.adapter.insertMany([
-				{ name: "Samsung Galaxy S10 Plus", quantity: 10, price: 704 },
-				{ name: "iPhone 11 Pro", quantity: 25, price: 999 },
-				{ name: "Huawei P30 Pro", quantity: 15, price: 679 },
-			]);
-		},
-
-		/**
-		 * Find an article by slug
+		 * Find an channel by slug
 		 *
-		 * @param {String} slug - Article slug
+		 * @param {String} slug - Channel slug
 		 *
 		 * @results {Object} Promise<Article
 		 */
@@ -337,7 +324,6 @@ const MessageService: ServiceSchema<ChannelSettings> & { methods: DbServiceMetho
 		},
 
 		/**
-		 * Transform the result entities to follow the RealWorld API spec
 		 *
 		 * @param {Context} ctx
 		 * @param {Array} entities
@@ -355,54 +341,28 @@ const MessageService: ServiceSchema<ChannelSettings> & { methods: DbServiceMetho
 			}
 		},
 		/**
-		 * Transform a result entity to follow the RealWorld API spec
 		 *
 		 * @param {Context} ctx
 		 * @param {Object} entity
 		 * @param {Object} user - Logged in user
 		 */
-		transformEntity(this: any, ctx, entity, user) {
-			if (!entity) return this.Promise.resolve();
-
-			return this.Promise.resolve(entity);
+		transformEntity(ctx, entity, user) {
+			if (!entity) return Promise.resolve();
+			return Promise.resolve(entity);
 		},
-
-		// async myAsyncFunction() {
-		// 	const myArray: any = Promise;
-		// 	const mappedArray = myArray.map((item: any) => item.property);
-		// 	return mappedArray;
-		// },
-	},
-
-	/**
-	 * Fired after database connection establishing.
-	 */
-	async afterConnected(this: any) {
-		if ("collection" in this.adapter) {
-			if (this.settings.indexes) {
-				await this.Promise.all(
-					this.settings.indexes.map((index: any) =>
-						(<MongoDbAdapter>this.adapter).collection.createIndex(index),
-					),
-				);
-			}
-		}
 	},
 
 	events: {
-		"cache.clean.articles"() {
+		"cache.clean.channels"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
 		"cache.clean.users"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
-		"cache.clean.comments"() {
+		"cache.clean.topics"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
 		"cache.clean.follows"() {
-			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
-		},
-		"cache.clean.favorites"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
 	},
