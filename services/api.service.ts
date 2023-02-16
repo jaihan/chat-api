@@ -56,6 +56,10 @@ const ApiService: ServiceSchema<ApiSettingsSchema> = {
 
 					// Topic
 					"POST /topics/:slug/messages": "topics.addMessage",
+
+					// Follow
+					"POST /channels/:slug/follow": "channels.join",
+					"DELETE /channels/:slug/follow": "channels.leave",
 				},
 
 				/**

@@ -1,7 +1,5 @@
-import { channel } from "diagnostics_channel";
 import { Context, Service, ServiceSchema, Errors } from "moleculer";
-import { DbAdapter, DbServiceSettings, MoleculerDbMethods } from "moleculer-db";
-import ForbiddenError from "moleculer-db";
+import type { DbAdapter, DbServiceSettings, MoleculerDbMethods } from "moleculer-db";
 import type MongoDbAdapter from "moleculer-db-adapter-mongo";
 import slug from "slug";
 import type { DbServiceMethods } from "../mixins/db.mixin";
@@ -29,11 +27,12 @@ export interface ActionQuantityParams {
 	creator: string;
 	limit: any;
 	offset: any;
-	slug: any;
 	topic: any;
+	slug: any;
+	message: any;
 
-	title: string;
 	follow: string;
+	user: string;
 }
 
 interface ChannelSettings extends DbServiceSettings {
@@ -44,21 +43,21 @@ interface ChannelThis extends Service<ChannelSettings>, MoleculerDbMethods {
 	adapter: DbAdapter | MongoDbAdapter;
 }
 
-const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods } = {
-	name: "channels",
+const FollowService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods } = {
+	name: "follows",
 	// version: 1
 
 	/**
 	 * Mixins
 	 */
-	mixins: [DbMixin("channels")],
+	mixins: [DbMixin("follows")],
 
 	/**
 	 * Settings
 	 */
 	settings: {
 		// Available fields in the responses
-		fields: ["_id", "title", "slug", "description", "createdAt", "updatedAt", "creator"],
+		fields: ["_id", "user", "channel", "createdAt", "updatedAt"],
 
 		// Validator for the `create` & `insert` actions.
 		entityValidator: {
@@ -70,7 +69,7 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 			creator: {
 				action: "users.get",
 				params: {
-					fields: ["username", "bio", "image"],
+					fields: ["_id", "username", "bio", "image"],
 				},
 			},
 		},
@@ -98,49 +97,63 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 	 */
 	actions: {
 		/**
-		 * Create a new channel.
-		 * Auth is required!
+		 * Create a new following record
 		 *
 		 * @actions
-		 * @param {Object} channel - Channel entity
 		 *
-		 * @returns {Object} Created entity
+		 * @param {String} user - Follower username
+		 * @param {String} follow - Followee username
+		 * @returns {Object} Created following record
 		 */
-		create: {
-			auth: "required",
+		add: {
 			params: {
-				channel: { type: "object" },
+				channel: { type: "string" },
+				user: { type: "string" },
 			},
-			meta: {
-				user: "",
-			},
-			handler(this: ChannelThis, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
-				let entity = ctx.params.channel;
-				return this.validateEntity(entity).then(() => {
-					const { user } = ctx.meta;
-					entity.slug =
-						slug(entity.title, { lower: true }) +
-						"-" +
-						((Math.random() * Math.pow(36, 6)) | 0).toString(36);
-					entity.creator = user?._id.toString();
-					entity.createdAt = new Date();
-					entity.updatedAt = new Date();
+			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
+				const { channel, user } = ctx.params;
+				return this.findByChannelAndUser(channel, user).then((item: any) => {
+					if (item)
+						return this.Promise.reject(
+							new MoleculerClientError("Articles has already favorited"),
+						);
 
-					console.log("***********");
-					console.log("***********");
-					console.log("***********, ctx.meta");
-					console.log(ctx.meta);
-					console.log("***********, ctx.entity");
-					console.log(entity);
-
-					console.log("***********");
-					console.log("***********");
-					console.log("***********");
 					return this.adapter
-						.insert(entity)
-						.then((doc) => this.transformDocuments(ctx, { populate: ["creator"] }, doc))
-						.then((entity) => this.transformResult(ctx, entity, ctx.meta.user))
-						.then((json) => this.entityChanged("created", json, ctx).then(() => json));
+						.insert({ channel, user, createdAt: new Date() })
+						.then((json: any) =>
+							this.entityChanged("created", json, ctx).then(() => json),
+						);
+				});
+			},
+		},
+
+		/**
+		 * Delete a favorite record
+		 *
+		 * @actions
+		 *
+		 * @param {String} article - Article ID
+		 * @param {String} user - User ID
+		 * @returns {Number} Count of removed records
+		 */
+		delete: {
+			params: {
+				channel: { type: "string" },
+				user: { type: "string" },
+			},
+			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
+				const { channel, user } = ctx.params;
+				return this.findByChannelAndUser(channel, user).then((item: any) => {
+					if (!item)
+						return this.Promise.reject(
+							new MoleculerClientError("Articles has not favorited yet"),
+						);
+
+					return this.adapter
+						.removeById(item._id)
+						.then((json: any) =>
+							this.entityChanged("removed", json, ctx).then(() => json),
+						);
 				});
 			},
 		},
@@ -284,165 +297,26 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 		 *
 		 * @returns {Object} Comment entity
 		 */
-		addComment: {
+		addMessage: {
 			auth: "required",
 			params: {
 				slug: { type: "string" },
-				topic: { type: "object" },
+				message: { type: "object" },
 			},
 			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
 				return this.Promise.resolve(ctx.params.slug)
 					.then((slug: string) => this.findBySlug(slug))
-					.then((channel: any) => {
-						if (!channel)
+					.then((topic: any) => {
+						if (!topic)
 							return this.Promise.reject(
 								new MoleculerClientError("Article not found", 404),
 							);
 
-						return ctx.call("topics.create", {
-							channel: channel._id.toString(),
-							topic: ctx.params.topic,
+						return ctx.call("messages.create", {
+							topic: topic._id.toString(),
+							message: ctx.params.message,
 						});
 					});
-			},
-		},
-
-		/**
-		 * Update an article.
-		 * Auth is required!
-		 *
-		 * @actions
-		 * @param {String} id - Article ID
-		 * @param {Object} article - Article modified fields
-		 *
-		 * @returns {Object} Updated entity
-		 */
-		update: {
-			auth: "required",
-			params: {
-				id: { type: "string" },
-				channel: {
-					type: "object",
-					props: {
-						title: { type: "string", min: 1, optional: true },
-						description: { type: "string", min: 1, optional: true },
-					},
-				},
-			},
-			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
-				let newData = ctx.params.channel;
-				newData.updatedAt = new Date();
-				// the 'id' is the slug
-				return this.Promise.resolve(ctx.params.id)
-					.then((slug: string) => this.findBySlug(slug))
-					.then((channel: any) => {
-						if (!channel)
-							return this.Promise.reject(
-								new MoleculerClientError("Article not found", 404),
-							);
-
-						console.log("***********");
-						console.log("***********");
-						console.log("***********");
-						console.log(channel);
-						console.log(channel.creator);
-						console.log(ctx.meta);
-						if (channel.creator !== ctx.meta.user?._id.toString())
-							return this.Promise.reject(
-								new MoleculerClientError("Article not found", 405),
-							);
-
-						const update = {
-							$set: newData,
-						};
-
-						console.log("***********");
-						console.log("***********");
-						console.log("***********");
-						console.log(update);
-						console.log(channel._id);
-
-						return this.adapter.updateById(channel._id, update);
-					})
-					.then((doc: any) =>
-						this.transformDocuments(ctx, { populate: ["creator"] }, doc),
-					)
-					.then((entity: any) => this.transformResult(ctx, entity, ctx.meta.user))
-					.then((json: any) => this.entityChanged("updated", json, ctx).then(() => json));
-			},
-		},
-
-		/**
-		 * Favorite an article
-		 * Auth is required!
-		 *
-		 * @actions
-		 * @param {String} id - Article slug
-		 *
-		 * @returns {Object} Updated article
-		 */
-		join: {
-			auth: "required",
-			params: {
-				slug: { type: "string" },
-			},
-			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
-				return this.Promise.resolve(ctx.params.slug)
-					.then((slug: string) => this.findBySlug(slug))
-					.then((channel: any) => {
-						if (!channel)
-							return this.Promise.reject(
-								new MoleculerClientError("Article not found", 404),
-							);
-
-						return ctx
-							.call("follows.add", {
-								channel: channel._id.toString(),
-								user: ctx.meta.user?._id.toString(),
-							})
-							.then(() => channel);
-					})
-					.then((doc: any) =>
-						this.transformDocuments(ctx, { populate: ["creator"] }, doc),
-					)
-					.then((entity: any) => this.transformResult(ctx, entity, ctx.meta.user));
-			},
-		},
-
-		/**
-		 * Unfavorite an article
-		 * Auth is required!
-		 *
-		 * @actions
-		 * @param {String} id - Article slug
-		 *
-		 * @returns {Object} Updated article
-		 */
-		leave: {
-			auth: "required",
-			params: {
-				slug: { type: "string" },
-			},
-			handler(this: any, ctx: Context<ActionQuantityParams, Meta>): Promise<object> {
-				return this.Promise.resolve(ctx.params.slug)
-					.then((slug: any) => this.findBySlug(slug))
-					.then((channel: any) => {
-						if (!channel)
-							return this.Promise.reject(
-								new MoleculerClientError("Article not found", 404),
-							);
-
-						return ctx
-							.call("follows.delete", {
-								channel: channel._id.toString(),
-								user: ctx.meta.user?._id.toString(),
-							})
-							.then(() => channel);
-					})
-					.then((doc: any) =>
-						this.transformDocuments(ctx, { populate: ["creator"] }, doc),
-					)
-					.then((entity: any) => this.transformResult(ctx, entity, ctx.meta.user));
 			},
 		},
 
@@ -564,6 +438,15 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 		// 	const mappedArray = myArray.map((item: any) => item.property);
 		// 	return mappedArray;
 		// },
+
+		/**
+		 * Find the first favorite record by 'article' or 'user'
+		 * @param {String} article - Article ID
+		 * @param {String} user - User ID
+		 */
+		findByChannelAndUser(channel, user) {
+			return this.adapter.findOne({ channel, user });
+		},
 	},
 
 	/**
@@ -582,7 +465,7 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 	},
 
 	events: {
-		"cache.clean.channels"() {
+		"cache.clean.articles"() {
 			if (this.broker.cacher) this.broker.cacher.clean(`${this.name}.*`);
 		},
 		"cache.clean.users"() {
@@ -600,4 +483,4 @@ const ChannelsService: ServiceSchema<ChannelSettings> & { methods: DbServiceMeth
 	},
 };
 
-export default ChannelsService;
+export default FollowService;
