@@ -150,7 +150,7 @@ const TopicService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods
 				limit: { type: "number", optional: true, convert: true },
 				offset: { type: "number", optional: true, convert: true },
 			},
-			handler(ctx) {
+			handler(this: ChannelThis, ctx: Context<ActionQuantityParams, Meta>) {
 				const limit = ctx.params.limit ? Number(ctx.params.limit) : 20;
 				const offset = ctx.params.offset ? Number(ctx.params.offset) : 0;
 
@@ -182,10 +182,6 @@ const TopicService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods
 						]),
 					)
 					.then((res) => {
-						console.log("***********");
-						console.log("***********");
-						console.log("***********");
-						console.log(res);
 						return this.transformDocuments(ctx, params, res[0])
 							.then((docs: any) => this.transformResult(ctx, docs, ctx.meta.user))
 							.then((r: any) => {
@@ -293,7 +289,7 @@ const TopicService: ServiceSchema<ChannelSettings> & { methods: DbServiceMethods
 			if (Array.isArray(entities)) {
 				return this.Promise.mapSeries(entities, (item: any) =>
 					this.transformEntity(ctx, item, user),
-				).then((channels: any) => ({ channels }));
+				).then((topics: any) => ({ topics }));
 			} else {
 				return this.transformEntity(ctx, entities, user).then((topic: any) => ({
 					topic,
